@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"fmt"
+	"log"
 	"os"
+	"sync"
 
 	"github.com/anacrolix/torrent"
 	"github.com/spf13/cobra"
@@ -17,36 +18,52 @@ var downloadCmd = &cobra.Command{
 		client, _ := torrent.NewClient(config)
 		defer client.Close()
 
-		if args[0][:6] == "magnet" {
-			tor, _ := client.AddMagnet(args[0])
-			<-tor.GotInfo()
-			tor.DownloadAll()
+		var wg sync.WaitGroup
+		wg.Add(len(args))
 
-			success := client.WaitAll()
-
-			if success {
-				fmt.Println("torrent successfully downloaded")
-				return
-			}
-
-			panic("error while downloading from magnet")
-		} else {
-			infoHash := fromInfoHashString(args[0])
-			tor, _ := client.AddTorrentInfoHash(infoHash)
-
-			<-tor.GotInfo()
-			tor.DownloadAll()
-
-			success := client.WaitAll()
-
-			if success {
-				fmt.Println("torrent successfully downloaded")
-				return
-			}
-
-			panic("error while downloading from infohash")
+		for _, arg := range args {
+			go download(client, &wg, arg)
 		}
+
+		wg.Wait()
 	},
+}
+
+func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
+	defer wg.Done()
+
+	if arg[:6] == "magnet" {
+		tor, err := client.AddMagnet(arg)
+
+		if err != nil {
+			log.Fatal("invalid magnet")
+			return
+		}
+
+		<-tor.GotInfo()
+		tor.DownloadAll()
+
+		success := client.WaitAll()
+
+		if !success {
+			log.Fatal("error while downloading from infohash")
+		}
+
+	} else {
+		infoHash := fromInfoHashString(arg)
+		tor, _ := client.AddTorrentInfoHash(infoHash)
+
+		<-tor.GotInfo()
+		tor.DownloadAll()
+
+		success := client.WaitAll()
+
+		if !success {
+			log.Fatal("error while downloading from infohash")
+		}
+
+	}
+
 }
 
 func initClientConfig() *torrent.ClientConfig {
