@@ -17,21 +17,34 @@ var downloadCmd = &cobra.Command{
 		client, _ := torrent.NewClient(config)
 		defer client.Close()
 
-		torrentType, _ := cmd.Flags().GetString("type")
-
-		if torrentType == "infohash" || torrentType == "hash" {
-			infoHash := fromInfoHashString(args[0])
-			tor, _ := client.AddTorrentInfoHash(infoHash)
+		if args[0][:6] == "magnet" {
+			tor, _ := client.AddMagnet(args[0])
 			<-tor.GotInfo()
 			tor.DownloadAll()
-			if client.WaitAll() == true {
+
+			success := client.WaitAll()
+
+			if success {
 				fmt.Println("torrent successfully downloaded")
+				return
 			}
-			fmt.Println("there was an error while downloading")
-		}
 
-		if torrentType == "magnet" {
+			panic("error while downloading from magnet")
+		} else {
+			infoHash := fromInfoHashString(args[0])
+			tor, _ := client.AddTorrentInfoHash(infoHash)
 
+			<-tor.GotInfo()
+			tor.DownloadAll()
+
+			success := client.WaitAll()
+
+			if success {
+				fmt.Println("torrent successfully downloaded")
+				return
+			}
+
+			panic("error while downloading from infohash")
 		}
 	},
 }
@@ -51,7 +64,4 @@ func fromInfoHashString(hexString string) torrent.InfoHash {
 
 func init() {
 	rootCmd.AddCommand(downloadCmd)
-
-	downloadCmd.Flags().StringP("type", "t", "", "Magnet or infohash")
-
 }
