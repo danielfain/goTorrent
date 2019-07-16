@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/anacrolix/torrent"
 	"github.com/spf13/cobra"
@@ -26,11 +28,14 @@ var downloadCmd = &cobra.Command{
 		}
 
 		wg.Wait()
+
 	},
 }
 
 func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 	defer wg.Done()
+
+	fmt.Println("Downloading:")
 
 	if arg[:6] == "magnet" {
 		tor, err := client.AddMagnet(arg)
@@ -41,6 +46,9 @@ func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 		}
 
 		<-tor.GotInfo()
+
+		fmt.Println(tor.Name())
+
 		tor.DownloadAll()
 
 		success := client.WaitAll()
@@ -54,16 +62,37 @@ func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 		tor, _ := client.AddTorrentInfoHash(infoHash)
 
 		<-tor.GotInfo()
+
+		fmt.Println(tor.Name())
 		tor.DownloadAll()
 
-		success := client.WaitAll()
+		ch := make(chan bool)
+		go waitAll(client, ch)
 
-		if !success {
-			log.Fatal("error while downloading from infohash")
+		success := false
+
+		for !success {
+			read := tor.Stats().BytesRead
+			progress := read.Int64() / tor.Length()
+
+			fmt.Println(progress)
+			time.Sleep(10 * time.Second)
+			success = <-ch
 		}
 
 	}
 
+}
+
+func waitAll(client *torrent.Client, ch chan bool) {
+	success := client.WaitAll()
+
+	if !success {
+		ch <- false
+		return
+	}
+
+	ch <- true
 }
 
 func initClientConfig() *torrent.ClientConfig {
