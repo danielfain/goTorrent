@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/anacrolix/torrent"
+	"github.com/cheggaaa/pb/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +23,8 @@ var downloadCmd = &cobra.Command{
 		defer client.Close()
 
 		var wg sync.WaitGroup
-		wg.Add(len(args))
+		numTorrents := len(args)
+		wg.Add(numTorrents)
 
 		for _, arg := range args {
 			go download(client, &wg, arg)
@@ -35,8 +38,6 @@ var downloadCmd = &cobra.Command{
 func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 	defer wg.Done()
 
-	fmt.Println("Downloading:")
-
 	if arg[:6] == "magnet" {
 		tor, err := client.AddMagnet(arg)
 
@@ -46,59 +47,53 @@ func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 		}
 
 		<-tor.GotInfo()
-
-		fmt.Println(tor.Name())
-
 		tor.DownloadAll()
 
-		success := client.WaitAll()
+		done := make(chan bool)
+		go client.WaitAll()
+		go printProgress(tor, done)
 
-		if !success {
-			log.Fatal("error while downloading from infohash")
-		}
+		<-done
 
 	} else {
 		infoHash := fromInfoHashString(arg)
 		tor, _ := client.AddTorrentInfoHash(infoHash)
 
 		<-tor.GotInfo()
-
-		fmt.Println(tor.Name())
 		tor.DownloadAll()
 
-		ch := make(chan bool)
-		go waitAll(client, ch)
+		done := make(chan bool)
+		go client.WaitAll()
+		go printProgress(tor, done)
 
-		success := false
-
-		for !success {
-			read := tor.Stats().BytesRead
-			progress := read.Int64() / tor.Length()
-
-			fmt.Println(progress)
-			time.Sleep(10 * time.Second)
-			success = <-ch
-		}
+		<-done
 
 	}
-
 }
 
-func waitAll(client *torrent.Client, ch chan bool) {
-	success := client.WaitAll()
+func printProgress(tor *torrent.Torrent, done chan bool) {
+	fmt.Println(tor.Name())
+	length := tor.Length()
 
-	if !success {
-		ch <- false
-		return
-	}
+	reader := io.LimitReader(tor.NewReader(), length)
+	writer := ioutil.Discard
 
-	ch <- true
+	bar := pb.Simple.Start64(length)
+	barReader := bar.NewProxyReader(reader)
+	io.Copy(writer, barReader)
+
+	bar.Finish()
+
+	done <- true
+
 }
 
 func initClientConfig() *torrent.ClientConfig {
 	home, _ := os.UserHomeDir()
 	config := torrent.NewDefaultClientConfig()
 	config.DataDir = home + "\\Downloads"
+	config.Debug = false
+
 	return config
 }
 
