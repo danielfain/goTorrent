@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"runtime"
 	"sync"
 
 	"github.com/anacrolix/torrent"
@@ -31,7 +32,6 @@ var downloadCmd = &cobra.Command{
 		}
 
 		wg.Wait()
-
 	},
 }
 
@@ -54,7 +54,6 @@ func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 		go printProgress(tor, done)
 
 		<-done
-
 	} else {
 		infoHash := fromInfoHashString(arg)
 		tor, _ := client.AddTorrentInfoHash(infoHash)
@@ -67,7 +66,6 @@ func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 		go printProgress(tor, done)
 
 		<-done
-
 	}
 }
 
@@ -85,14 +83,17 @@ func printProgress(tor *torrent.Torrent, done chan bool) {
 	bar.Finish()
 
 	done <- true
-
 }
 
 func initClientConfig() *torrent.ClientConfig {
 	home, _ := os.UserHomeDir()
 	config := torrent.NewDefaultClientConfig()
-	config.DataDir = home + "\\Downloads"
-	config.Debug = false
+
+	if runtime.GOOS == "windows" {
+		config.DataDir = home + "\\Downloads"
+	} else {
+		config.DataDir = home + "/Downloads"
+	}
 
 	return config
 }
