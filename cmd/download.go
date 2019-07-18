@@ -38,7 +38,7 @@ var downloadCmd = &cobra.Command{
 func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 	defer wg.Done()
 
-	if arg[:6] == "magnet" {
+	if len(arg) > 6 && arg[:6] == "magnet" {
 		tor, err := client.AddMagnet(arg)
 
 		if err != nil {
@@ -100,7 +100,12 @@ func initClientConfig() *torrent.ClientConfig {
 
 func fromInfoHashString(hexString string) torrent.InfoHash {
 	var infoHash torrent.InfoHash
-	infoHash.FromHexString(hexString)
+	err := infoHash.FromHexString(hexString)
+
+	if err != nil {
+		panic("Invalid infohash")
+	}
+
 	return infoHash
 }
 
