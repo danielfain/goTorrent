@@ -78,22 +78,18 @@ func printProgress(tor *torrent.Torrent, wg *sync.WaitGroup, p *mpb.Progress) {
 
 	bar := p.AddBar(total,
 		mpb.PrependDecorators(
-			// simple name decorator
-			decor.Name(name),
-			// decor.DSyncWidth bit enables column width synchronization
-			decor.Percentage(decor.WCSyncSpace),
+			decor.Name(name+" "),
+			decor.CountersKibiByte("% 6.1f / % 6.1f"),
 		),
 		mpb.AppendDecorators(
-			// replace ETA decorator with "done" message, OnComplete event
 			decor.OnComplete(
-				// ETA decorator with ewma age of 60
-				decor.EwmaETA(decor.ET_STYLE_GO, 60), "done",
+				decor.AverageSpeed(decor.UnitKiB, "% .2f"), "done",
 			),
 		),
 	)
 
-	reader := io.LimitReader(tor.NewReader(), total)
-	barReader := bar.ProxyReader(reader)
+	torrentReader := io.LimitReader(tor.NewReader(), total)
+	barReader := bar.ProxyReader(torrentReader)
 	io.Copy(ioutil.Discard, barReader)
 }
 
