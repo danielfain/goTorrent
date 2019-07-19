@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -10,8 +9,9 @@ import (
 	"sync"
 
 	"github.com/anacrolix/torrent"
-	"github.com/cheggaaa/pb/v3"
 	"github.com/spf13/cobra"
+	"github.com/vbauerster/mpb"
+	"github.com/vbauerster/mpb/decor"
 )
 
 // downloadCmd represents the download command
@@ -23,19 +23,32 @@ var downloadCmd = &cobra.Command{
 		client, _ := torrent.NewClient(config)
 		defer client.Close()
 
-		var wg sync.WaitGroup
 		numTorrents := len(args)
+
+		var wg sync.WaitGroup
+		torrents := make(chan *torrent.Torrent, numTorrents)
+
 		wg.Add(numTorrents)
 
 		for _, arg := range args {
-			go download(client, &wg, arg)
+			go getTorrentInfo(client, &wg, arg, torrents)
 		}
 
 		wg.Wait()
+
+		p := mpb.New(mpb.WithWaitGroup(&wg))
+
+		wg.Add(numTorrents)
+
+		for t := range torrents {
+			go printProgress(t, &wg, p)
+		}
+
+		p.Wait()
 	},
 }
 
-func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
+func getTorrentInfo(client *torrent.Client, wg *sync.WaitGroup, arg string, torrents chan *torrent.Torrent) {
 	defer wg.Done()
 
 	if len(arg) > 6 && arg[:6] == "magnet" {
@@ -47,42 +60,41 @@ func download(client *torrent.Client, wg *sync.WaitGroup, arg string) {
 		}
 
 		<-tor.GotInfo()
-		tor.DownloadAll()
-
-		done := make(chan bool)
-		go client.WaitAll()
-		go printProgress(tor, done)
-
-		<-done
+		torrents <- tor
 	} else {
 		infoHash := fromInfoHashString(arg)
 		tor, _ := client.AddTorrentInfoHash(infoHash)
 
 		<-tor.GotInfo()
-		tor.DownloadAll()
-
-		done := make(chan bool)
-		go client.WaitAll()
-		go printProgress(tor, done)
-
-		<-done
+		torrents <- tor
 	}
 }
 
-func printProgress(tor *torrent.Torrent, done chan bool) {
-	fmt.Println(tor.Name())
-	length := tor.Length()
+func printProgress(tor *torrent.Torrent, wg *sync.WaitGroup, p *mpb.Progress) {
+	defer wg.Done()
 
-	reader := io.LimitReader(tor.NewReader(), length)
-	writer := ioutil.Discard
+	total := tor.Length()
+	name := tor.Name()
 
-	bar := pb.Simple.Start64(length)
-	barReader := bar.NewProxyReader(reader)
-	io.Copy(writer, barReader)
+	bar := p.AddBar(total,
+		mpb.PrependDecorators(
+			// simple name decorator
+			decor.Name(name),
+			// decor.DSyncWidth bit enables column width synchronization
+			decor.Percentage(decor.WCSyncSpace),
+		),
+		mpb.AppendDecorators(
+			// replace ETA decorator with "done" message, OnComplete event
+			decor.OnComplete(
+				// ETA decorator with ewma age of 60
+				decor.EwmaETA(decor.ET_STYLE_GO, 60), "done",
+			),
+		),
+	)
 
-	bar.Finish()
-
-	done <- true
+	reader := io.LimitReader(tor.NewReader(), total)
+	barReader := bar.ProxyReader(reader)
+	io.Copy(ioutil.Discard, barReader)
 }
 
 func initClientConfig() *torrent.ClientConfig {
