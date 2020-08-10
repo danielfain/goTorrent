@@ -3,12 +3,11 @@ package cmd
 import (
 	"io"
 	"io/ioutil"
-	"log"
-	"os"
-	"runtime"
 	"sync"
 
+	"github.com/anacrolix/log"
 	"github.com/anacrolix/torrent"
+	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb"
 	"github.com/vbauerster/mpb/decor"
@@ -44,6 +43,7 @@ var downloadCmd = &cobra.Command{
 			go printProgress(t, &wg, p)
 		}
 
+		wg.Wait()
 		p.Wait()
 	},
 }
@@ -55,8 +55,7 @@ func getTorrentInfo(client *torrent.Client, wg *sync.WaitGroup, arg string, torr
 		tor, err := client.AddMagnet(arg)
 
 		if err != nil {
-			log.Fatal("invalid magnet")
-			return
+			panic("Invalid magnet.")
 		}
 
 		<-tor.GotInfo()
@@ -94,14 +93,10 @@ func printProgress(tor *torrent.Torrent, wg *sync.WaitGroup, p *mpb.Progress) {
 }
 
 func initClientConfig() *torrent.ClientConfig {
-	home, _ := os.UserHomeDir()
+	home, _ := homedir.Dir()
 	config := torrent.NewDefaultClientConfig()
-
-	if runtime.GOOS == "windows" {
-		config.DataDir = home + "\\Downloads"
-	} else {
-		config.DataDir = home + "/Downloads"
-	}
+	config.DataDir = home + "/Downloads"
+	config.Logger = log.Discard
 
 	return config
 }

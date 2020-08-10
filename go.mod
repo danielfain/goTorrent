@@ -3,6 +3,7 @@ module github.com/danielfain/goTorrent
 go 1.14
 
 require (
+	github.com/anacrolix/log v0.7.0
 	github.com/anacrolix/torrent v1.15.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/spf13/cobra v1.0.0
